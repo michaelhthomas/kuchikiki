@@ -22,3 +22,9 @@ indexmap = "2.2.6"
 
 [dev-dependencies]
 tempfile = "3"
+criterion = "0.3"
+lightningcss = "1.0.0-alpha.66"
+
+[[bench]]
+name = "wikipedia"
+harness = false
