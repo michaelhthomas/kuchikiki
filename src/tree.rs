@@ -219,9 +219,7 @@ impl NodeRef {
                 None
             },
             name,
-            attributes: RefCell::new(Attributes {
-                map: attributes.into_iter().collect(),
-            }),
+            attributes: RefCell::new(Attributes::new(attributes)),
         }))
     }
 

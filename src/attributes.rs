@@ -1,11 +1,98 @@
+use fastbloom::BloomFilter;
 use html5ever::{LocalName, Namespace, Prefix};
 use indexmap::{map::Entry, IndexMap};
+use selectors::attr::{CaseSensitivity, SELECTOR_WHITESPACE};
+
+#[derive(Debug, Clone)]
+pub(crate) enum ClassCache {
+    /// In CSS selector matching, checking an element's class is frequent. Given that classes are
+    /// often specific, most elements won't have the checked class. Leveraging this, we use a Bloom
+    /// filter for a quick initial check. If positive, we do an actual check. This two-tier
+    /// approach ensures fewer actual checks on class attributes.
+    Bloom(BloomFilter),
+    /// Element has a single class.
+    Single,
+}
+
+impl ClassCache {
+    fn new(value: &str) -> Self {
+        if !value.trim().contains(SELECTOR_WHITESPACE) {
+            // We just have a single class and a Bloom filter is not needed.
+            ClassCache::Single
+        } else {
+            // Build a Bloom filter for all element's classes
+            let classes: Vec<_> = value
+                .split(SELECTOR_WHITESPACE)
+                .filter(|s| !s.is_empty())
+                .collect();
+            ClassCache::Bloom(BloomFilter::with_num_bits(64).items(classes))
+        }
+    }
+}
 
 /// Convenience wrapper around a indexmap that adds method for attributes in the null namespace.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Attributes {
     /// A map of attributes whose name can have namespaces.
     pub map: IndexMap<ExpandedName, Attribute>,
+    /// The 'class' attribute value is separated for performance reasons.
+    pub(crate) class_cache: Option<ClassCache>,
+}
+
+impl Attributes {
+    pub(crate) fn new<I>(attributes: I) -> Attributes
+    where
+        I: IntoIterator<Item = (ExpandedName, Attribute)>,
+    {
+        let mut class_cache = None;
+        let map: IndexMap<ExpandedName, Attribute> = attributes.into_iter().collect();
+        if let Some(attr) = map.get(&ExpandedName::new(ns!(), local_name!("class"))) {
+            class_cache = Some(ClassCache::new(&attr.value));
+        }
+        Attributes { map, class_cache }
+    }
+
+    /// Manually check whether the class attribute value contains the given class.
+    #[inline]
+    fn has_class_impl(&self, name: &[u8], case_sensitivity: CaseSensitivity) -> bool {
+        let class_list = match self.get(local_name!("class")) {
+            Some(class_list) => class_list,
+            None => return false,
+        };
+        for class in class_list.split(SELECTOR_WHITESPACE) {
+            if case_sensitivity.eq(class.as_bytes(), name) {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[inline]
+    pub(crate) fn has_class(&self, name: &[u8], case_sensitivity: CaseSensitivity) -> bool {
+        match (&self.class_cache, case_sensitivity) {
+            (Some(ClassCache::Single), case_sensitivity) => self
+                .get(local_name!("class"))
+                .map_or(false, |class| case_sensitivity.eq(class.as_bytes(), name)),
+            (Some(ClassCache::Bloom(bloom_filter)), CaseSensitivity::CaseSensitive) => {
+                if bloom_filter.contains(name) {
+                    self.has_class_impl(name, case_sensitivity)
+                } else {
+                    // Class is not in the Bloom filter, hence this `class` value does not
+                    // contain the given class
+                    false
+                }
+            }
+            (Some(ClassCache::Bloom(_)), CaseSensitivity::AsciiCaseInsensitive) => {
+                self.has_class_impl(name, case_sensitivity)
+            }
+            (None, case_sensitivity) => self.has_class_impl(name, case_sensitivity),
+        }
+    }
+}
+impl PartialEq for Attributes {
+    fn eq(&self, other: &Self) -> bool {
+        self.map == other.map
+    }
 }
 
 /// <https://www.w3.org/TR/REC-xml-names/#dt-expname>

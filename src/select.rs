@@ -17,11 +17,6 @@ use selectors::parser::{
 use selectors::{self, matching, OpaqueElement};
 use std::fmt;
 
-/// The definition of whitespace per CSS Selectors Level 3 § 4.
-///
-/// Copied from rust-selectors.
-static SELECTOR_WHITESPACE: &[char] = &[' ', '\t', '\n', '\r', '\x0C'];
-
 #[derive(Debug, Clone)]
 pub struct KuchikiSelectors;
 
@@ -270,14 +265,7 @@ impl selectors::Element for NodeDataRef<ElementData> {
     #[inline]
     fn has_class(&self, name: &LocalName, case_sensitivity: CaseSensitivity) -> bool {
         let name = name.as_bytes();
-        !name.is_empty()
-            && if let Some(class_attr) = self.attributes.borrow().get(local_name!("class")) {
-                class_attr
-                    .split(SELECTOR_WHITESPACE)
-                    .any(|class| case_sensitivity.eq(class.as_bytes(), name))
-            } else {
-                false
-            }
+        !name.is_empty() && self.attributes.borrow().has_class(name, case_sensitivity)
     }
 
     #[inline]
