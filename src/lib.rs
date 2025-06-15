@@ -33,6 +33,6 @@ pub use tree::{Doctype, DocumentData, ElementData, Node, NodeData, NodeRef};
 /// use kuchikiki::traits::*;
 /// ```
 pub mod traits {
-    pub use crate::iter::{ElementIterator, NodeIterator};
-    pub use html5ever::tendril::TendrilSink;
+	pub use crate::iter::{ElementIterator, NodeIterator};
+	pub use html5ever::tendril::TendrilSink;
 }
